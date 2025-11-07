@@ -10,8 +10,9 @@ import {
 	UploadCloud,
 } from "lucide-react";
 import Papa from "papaparse";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
+import Markdown from "react-markdown";
 import {
 	Bar,
 	BarChart,
@@ -23,8 +24,10 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
+import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import z from "zod";
+import { generateAIAnalisysAction } from "@/actions/generate-ai-analisys";
 import {
 	type GetClientDataActionResponse,
 	getClientDataAction,
@@ -32,13 +35,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-	ChartConfig,
+	type ChartConfig,
 	ChartContainer,
 	ChartLegend,
 	ChartLegendContent,
 	ChartTooltip,
 	ChartTooltipContent,
 } from "@/components/ui/chart";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -73,7 +82,9 @@ const chartConfig = {
 export default function FattorSearch() {
 	const [data, setData] = useState<GetClientDataActionResponse | null>(null);
 	const [faturamento, setFaturamento] = useState<FaturamentoItem[]>([]);
-	const [error, setError] = useState<string | null>(null);
+	const [isGeneratingAIAnalysis, startGeneratingAIAnalysis] = useTransition();
+	const [aiAnalysisResult, setAIAnalysisResult] = useState<string | null>(null);
+	const [isOpenAIAnalysisDialog, setIsOpenAIAnalysisDialog] = useState(false);
 
 	const dti = data
 		? Math.min(100, (data.bCred.current_debt / data.bCred.income) * 100)
@@ -115,11 +126,9 @@ export default function FattorSearch() {
 							"CSV inválido. Verifique colunas 'competence' e 'value'.",
 						);
 					setFaturamento(rows);
-				} catch (e: any) {
-					setError(e.message || "Falha ao processar o CSV.");
-				}
+				} catch (e: any) {}
 			},
-			error: (e) => setError(e.message),
+			error: (e) => {},
 		});
 	}
 
@@ -188,6 +197,78 @@ export default function FattorSearch() {
 							</div>
 						</div>
 					)}
+
+					{/*
+- Se o percentual de dívidas pagas for **inferior a 50%**, o cliente é **recusado** em qualquer operação.
+- Se o percentual for **igual ou superior a 70%**, o cliente é **aprovado**.
+- Se o percentual for **igual ou superior a 90%**, ele é **elegível para empréstimos de nível superior**.
+					
+- **P:** score acima de **400** e faturamento mensal acima de **R$ 10.000**
+- **M:** score acima de **600** e faturamento mensal acima de **R$ 100.000**
+- **G:** score acima de **800** e faturamento mensal acima de **R$ 1.000.000**
+
+*/}
+
+					<div className="full mt-8 text-sm text-sky-300 flex items-center">
+						<div>
+							<p>
+								Situação preliminar:{" "}
+								{data.bCred.payment_history.last_12_months_on_time_percent < 50
+									? "Recusado"
+									: data.bCred.payment_history.last_12_months_on_time_percent >=
+											70
+										? "Aprovado"
+										: data.bCred.payment_history
+													.last_12_months_on_time_percent >= 90
+											? "Elegível para empréstimos de nível superior"
+											: "Necessita análise manual"}
+							</p>
+							<br />
+							<p>
+								Nível de empréstimo recomendado:{" "}
+								{data.bCred.score > 800
+									? "G (Score acima de 800 e faturamento mensal acima de R$ 1.000.000)"
+									: data.bCred.score > 600
+										? "M (Score acima de 600 e faturamento mensal acima de R$ 100.000)"
+										: data.bCred.income > 10000
+											? "P (Score acima de 400 e faturamento mensal acima de R$ 10.000)"
+											: "Não recomendado"}
+							</p>
+						</div>
+
+						<Button
+							variant="outline"
+							className="ml-auto"
+							onClick={() => {
+								if (aiAnalysisResult) {
+									setIsOpenAIAnalysisDialog(true);
+									return;
+								}
+
+								const promise = generateAIAnalisysAction({
+									bCred: data.bCred,
+									bomPagador: data.bomPagador,
+									faturamento: faturamento,
+								});
+
+								toast.promise(promise, {
+									loading: "Gerando análise de IA...",
+									success: "Análise de IA gerada com sucesso!",
+									error: "Erro ao gerar análise de IA!",
+								});
+
+								startGeneratingAIAnalysis(async () => {
+									await promise.then(setAIAnalysisResult).catch(() => null);
+									setIsOpenAIAnalysisDialog(true);
+								});
+							}}
+							disabled={isGeneratingAIAnalysis}
+						>
+							{isGeneratingAIAnalysis
+								? "Gerando análise de IA..."
+								: "Solicitar Análise de IA"}
+						</Button>
+					</div>
 				</CardContent>
 			</Card>
 
@@ -349,6 +430,18 @@ export default function FattorSearch() {
 					</CardContent>
 				</Card>
 			</div>
+
+			<Dialog
+				open={isOpenAIAnalysisDialog}
+				onOpenChange={setIsOpenAIAnalysisDialog}
+			>
+				<DialogContent className="max-h-[92dvh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>Análise de IA</DialogTitle>
+					</DialogHeader>
+					<Markdown remarkPlugins={[remarkGfm]}>{aiAnalysisResult}</Markdown>,
+				</DialogContent>
+			</Dialog>
 		</main>
 	);
 }

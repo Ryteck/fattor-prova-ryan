@@ -28,11 +28,11 @@ export const generateBCred = (cnpj: string): BCred => {
 	return {
 		cnpj,
 		name: faker.person.fullName(),
-		income: faker.number.float({ min: 1500, max: 20000, fractionDigits: 2 }),
+		income: faker.number.float({ min: 10000, max: 20000, fractionDigits: 2 }),
 		open_credit_lines: faker.number.int({ min: 1, max: 10 }),
 		current_debt: faker.number.float({
 			min: 0,
-			max: 50000,
+			max: 20000,
 			fractionDigits: 2,
 		}),
 		delinquencies: faker.number.int({ min: 0, max: 5 }),
