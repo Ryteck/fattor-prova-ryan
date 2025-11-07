@@ -19,7 +19,6 @@ Segue um exemplo de resposta da API:
 {
   "cnpj": "00000000000000/0001",
   "name": "Fulano da Silva",
-  "birthdate": "1985-03-12",
   "income": 4500,
   "open_credit_lines": 3,
   "current_debt": 1200,
